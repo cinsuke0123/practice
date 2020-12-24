@@ -1,0 +1,103 @@
+---
+title: "Super Learnerの実装"
+author: "Yusuke TSUCHIYA"
+date: "2020/8/19"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+options(knitr.duplicate.label = "allow")
+```
+
+## Importing the data set RLab3.SuperLearner.csv
+```{r read}
+ObsData = read.csv("RLab3.SuperLearner.csv")
+names(ObsData)
+head(ObsData)
+summary(ObsData)
+nrow(ObsData)
+```
+## The curse of dimensionality!
+### Counting the number of ships within strata of map possession W1 and mutinies W3.
+```{r checking}
+length(ObsData$W1)
+length(ObsData$W3)
+as.data.frame(table(ObsData$W1, ObsData$W3))
+```
+### Estimating the conditional expectation of Y with the sample proportion in each strata
+```{r check}
+lm = lm(Y ~ W1 + W3, ObsData)
+summary(lm)
+for (w1 in unique(ObsData$W1)) {
+  for (w3 in unique(ObsData$W3)) {
+    prob = lm$coefficients[1] + lm$coefficients[2]*w1 + lm$coefficients[3]*w3
+    print(paste("w1:", w1, " w3:", w3, " prob:", round(prob, 3), sep = " "))
+  }
+}
+```
+## Code discrete Super Learner to select the estimator with the smallest cross-validated risk estimate
+### Creating the following transformed variables and add them to data frame ObsData.
+```{r cv_2}
+ W2sq <- ObsData$W2*ObsData$W2
+ sinW2sq<- sin(W2sq)
+ logW2<- log(ObsData$W2)
+ W4sq <- ObsData$W4*ObsData$W4
+ sinW4sq <- sin(W4sq)
+ logW4 <- log(ObsData$W4)
+```
+### Spliting the data into V = 10 folds.
+```{r cv_3}
+Fold <- c(rep(1, 100), rep(2, 100), rep(3, 100),rep(4, 100),rep(5, 100),
+         +   rep(6, 100),rep(7, 100), rep(8, 100), rep(9, 100), rep(10, 100))
+ObsData$fold = Fold
+head(ObsData)
+```
+### Creating an empty matrix CV.risk with 10 rows and 4 columns to hold the cross-validated risk for each algorithm, evaluated at each fold.
+```{r cv_4}
+CV.risk = matrix(NA, nrow = 10, ncol=4)
+CV.risk
+```
+### To implement discrete Super Learner, use a for loop to fit each estimator on the training set (9/10 of the data); predict the probability of finding treasure for the corresponding validation set (1/10 of the data), and evaluate the cross-validated risk.
+```{r cv_5}
+list_formulas = list("Y ~ W1 + W3 + W1*W3 + W4^2",
+                     "Y ~ W1 + log(W2) + W3 + W4 + W3*W4",
+                     "Y ~ W1 + W2 + W4 + W1*W2 + W1*W4 + W2*W4 + W1*W2*W4",
+                     "Y ~ W1 + sin(W2^2) + W1*sin(W2^2) + log(W4)"
+  )
+list_fold <- unique(ObsData$fold)
+
+for (V in 1:length(list_fold)) {
+  valid = ObsData[ObsData$fold == list_fold[V],]
+  train = ObsData[ObsData$fold != list_fold[V],]
+  for (f in 1:length(list_formulas)) {
+    lm = glm(formula = as.formula(list_formulas[[f]]), family = binomial(logit), data = train)
+    pred = predict(lm, type = "response")
+    CV.risk[V, f] <- mean((valid$Y - pred)^2)
+  }
+}
+```
+### Selecting the algorithm with the lowest average cross-validated risk across the folds.
+```{r cv_6}
+colMeans(CV.risk)
+```
+### Fitting the “chosen” algorithm on all the data.
+```{r cv_7}
+lm = glm(formula = as.formula("Y ~ W1 + W3 + W1*W3 + W4^2"), family = binomial(logit), data = ObsData)
+summary(lm)
+```
+## Using the SuperLearner package to build the best combination of algorithms.
+```{r sl}
+library(SuperLearner)
+listWrappers()
+SL.library<- c('SL.glm', 'SL.glm.interaction')
+X<- subset(ObsData, select= -Y )
+SL.out<- CV.SuperLearner(Y=ObsData$Y, X=X, SL.library=SL.library, family='binomial', cvControl=list(V=10))
+summary(SL.out)
+# 複数のモデルを埋め込むにはどうすれば
+# discreat slとslの違い
+# discreat sl: もっとも良いalgorithmの結果を持ってくる.
+# sl: 全部のalgorithmを考慮に入れる
+# 結局この後g computationするってなったときにどうする？
+```
+

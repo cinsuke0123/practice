@@ -1,0 +1,47 @@
+---
+title: "mail_marketing_practice"
+author: "Yusuke Tsuchiya"
+date: "2020/7/2"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+library(tidyverse)
+```
+
+```{r setup, include=FALSE}
+email_data <- read.csv("../datas/hoge.csv")
+```
+
+```{r setup, include=FALSE}
+male_df <- email_data %>%
+  filter( segment != "Womens E-Mail") %>%
+  mutate( treatment = if_else( segment == "Mens E-Mail", 1, 0 ))
+```
+
+```{r setup, include=FALSE}
+summary_by_segment <- male_df %>%
+  group_by( treatment ) %>%
+  dplyr::summarise(
+    conversion_rate = mean(conversion),
+    spend_mean = mean( spend ),
+    count = n()
+  )
+```
+
+
+
+```{r setup, include=FALSE}
+mens_mail <- male_df %>%
+  filter(treatment == 1) %>%
+  pull(spend)
+
+no_mail <- male_df %>%
+  filter(treatment == 0) %>%
+  pull(spend)
+
+rct_ttest <- t.test(mens_mail, no_mail, var.equal = TRUE)
+rct_ttest
+```
+
+
